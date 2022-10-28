@@ -79,10 +79,13 @@ fn write_image(filename: &str, pixels: &[u8], bounds: (usize, usize)) -> Result<
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
-    if args.len() != 5 {
-        eprintln!("Usage: {} FILE PIXELS UPPERLEFT LOWERRIGHT", args[0]);
+    if args.len() != 6 {
         eprintln!(
-            "Example: {} mandel.png 1000x750 -1.20,0.35 -1,0.20",
+            "Usage: {} FILE PIXELS UPPERLEFT LOWERRIGHT THREAD_COUNT",
+            args[0]
+        );
+        eprintln!(
+            "Example: {} mandel.png 1000x750 -1.20,0.35 -1,0.20 2",
             args[0]
         );
         std::process::exit(1);
@@ -93,7 +96,7 @@ fn main() {
     let lower_right = parse_complext(&args[4]).expect("Cannot parse LOWERRIGHT");
     let mut pixels = vec![0; bounds.0 * bounds.1];
 
-    let threads = 2;
+    let threads = args[5].parse::<usize>().unwrap();
     let rows_per_band = bounds.1 / threads + 1;
 
     {
@@ -111,7 +114,9 @@ fn main() {
                     pixel_to_point(bounds, (bounds.0, top + height), upper_left, lower_right);
 
                 spawer.spawn(move |_| {
+                    eprintln!("{} start work {} pixels", i, band.len());
                     render(band, band_bounds, band_upper_left, band_lower_right);
+                    eprintln!("{} finish work", i);
                 });
             }
         })
