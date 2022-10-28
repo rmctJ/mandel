@@ -104,7 +104,7 @@ fn main() {
         crossbeam::scope(|spawer| {
             for (i, band) in bands.into_iter().enumerate() {
                 let top = rows_per_band * i;
-                let height = band.len();
+                let height = band.len() / bounds.0;
                 let band_bounds = (bounds.0, height);
                 let band_upper_left = pixel_to_point(bounds, (0, top), upper_left, lower_right);
                 let band_lower_right =
