@@ -1,6 +1,7 @@
 use image::codecs::png::PngEncoder;
 use image::{ColorType, ImageEncoder};
 use num::Complex;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::env;
 use std::fs::File;
 use std::io::Error;
@@ -49,23 +50,6 @@ fn pixel_to_point(
     }
 }
 
-fn render(
-    pixels: &mut [u8],
-    bounds: (usize, usize),
-    upper_left: Complex<f64>,
-    lower_right: Complex<f64>,
-) {
-    for row in 0..bounds.1 {
-        for col in 0..bounds.0 {
-            let point = pixel_to_point(bounds, (col, row), upper_left, lower_right);
-            pixels[row * bounds.0 + col] = match escape_time(point, 255) {
-                None => 0,
-                Some(c) => 255 - c as u8,
-            };
-        }
-    }
-}
-
 fn write_image(filename: &str, pixels: &[u8], bounds: (usize, usize)) -> Result<(), Error> {
     let output = File::create(filename)?;
 
@@ -79,13 +63,10 @@ fn write_image(filename: &str, pixels: &[u8], bounds: (usize, usize)) -> Result<
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
-    if args.len() != 6 {
+    if args.len() != 5 {
+        eprintln!("Usage: {} FILE PIXELS UPPERLEFT LOWERRIGHT", args[0]);
         eprintln!(
-            "Usage: {} FILE PIXELS UPPERLEFT LOWERRIGHT THREAD_COUNT",
-            args[0]
-        );
-        eprintln!(
-            "Example: {} mandel.png 1000x750 -1.20,0.35 -1,0.20 2",
+            "Example: {} mandel.png 1000x750 -1.20,0.35 -1,0.20",
             args[0]
         );
         std::process::exit(1);
@@ -94,34 +75,20 @@ fn main() {
     let bounds = parse_pair(&args[2], 'x').expect("Cannot parse PIXELS");
     let upper_left = parse_complext(&args[3]).expect("Cannot parse UPPERLEFT");
     let lower_right = parse_complext(&args[4]).expect("Cannot parse LOWERRIGHT");
-    let mut pixels = vec![0; bounds.0 * bounds.1];
 
-    let threads = args[5].parse::<usize>().unwrap();
-    let rows_per_band = bounds.1 / threads + 1;
+    let pixels = (0..bounds.0 * bounds.1)
+        .into_par_iter()
+        .map(|id| {
+            let row = id / bounds.0;
+            let col = id % bounds.0;
+            let point = pixel_to_point(bounds, (col, row), upper_left, lower_right);
 
-    {
-        let bands = pixels
-            .chunks_mut(rows_per_band * bounds.0)
-            .collect::<Vec<_>>();
-
-        crossbeam::scope(|spawer| {
-            for (i, band) in bands.into_iter().enumerate() {
-                let top = rows_per_band * i;
-                let height = band.len() / bounds.0;
-                let band_bounds = (bounds.0, height);
-                let band_upper_left = pixel_to_point(bounds, (0, top), upper_left, lower_right);
-                let band_lower_right =
-                    pixel_to_point(bounds, (bounds.0, top + height), upper_left, lower_right);
-
-                spawer.spawn(move |_| {
-                    eprintln!("{} start work {} pixels", i, band.len());
-                    render(band, band_bounds, band_upper_left, band_lower_right);
-                    eprintln!("{} finish work", i);
-                });
+            match escape_time(point, 255) {
+                None => 0,
+                Some(v) => 255 - v as u8,
             }
         })
-        .unwrap();
-    }
+        .collect::<Vec<_>>();
 
     write_image(&args[1], &pixels, bounds).unwrap();
 }
